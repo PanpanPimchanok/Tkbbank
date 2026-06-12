@@ -462,6 +462,7 @@ input,select{font-size:16px!important}/* ป้องกัน iOS zoom ตอ�
         <button class="tab" data-rtab="r-month">สรุปรายเดือน</button>
         <button class="tab" data-rtab="r-edit">✏️ แก้ไข</button>
         <button class="tab" data-rtab="r-int">💹 ดอกเบี้ย</button>
+        <button class="tab" data-rtab="r-balance">📋 ยอดคงเหลือทุกบัญชี</button>
       </div>
       <div id="r-day">
         <div style="display:flex;gap:8px;margin-bottom:1rem;align-items:flex-end;flex-wrap:wrap">
@@ -493,6 +494,26 @@ input,select{font-size:16px!important}/* ป้องกัน iOS zoom ตอ�
           <button class="btn btn-p btn-sm" id="int-run-btn" style="margin-bottom:1rem">💹 คำนวณดอกเบี้ย</button>
           <table><thead><tr><th>เลขบัญชี</th><th>ชื่อ</th><th style="text-align:right">ยอดเงิน</th><th style="text-align:right">วัน</th><th style="text-align:right">ดอกเบี้ย</th></tr></thead>
           <tbody id="int-table"></tbody></table>
+        </div>
+      </div>
+      <div id="r-balance" class="hidden">
+        <div class="card" style="max-width:900px">
+          <p class="sec">📋 สรุปยอดคงเหลือทุกบัญชี (ยอดสะสม)</p>
+          <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end;flex-wrap:wrap">
+            <div><span class="lbl">รายการประกอบ (ช่วงที่ผ่านมา)</span>
+              <select id="rb-range" style="width:170px">
+                <option value="1">1 เดือนล่าสุด</option>
+                <option value="2">2 เดือนล่าสุด</option>
+                <option value="3" selected>3 เดือนล่าสุด</option>
+                <option value="6">6 เดือนล่าสุด</option>
+                <option value="12">12 เดือนล่าสุด</option>
+                <option value="all">ทั้งหมด</option>
+              </select>
+            </div>
+            <button class="btn btn-sm" id="rb-print-btn">🖨️ พิมพ์รายงาน</button>
+          </div>
+          <div class="warn" style="font-size:12px;margin-bottom:10px">💡 แนะนำให้พิมพ์รายงานนี้เก็บไว้ทุกเดือน — ถ้าระบบมีปัญหา จะมียอดคงเหลือล่าสุดของทุกบัญชี และรายการธุรกรรมในช่วงที่เลือก ให้ทำรายการต่อ/ทำซ้ำได้ ไม่ต้องย้อนทำใหม่ทั้งหมด</div>
+          <div id="rb-c"></div>
         </div>
       </div>
     </div>
@@ -1023,7 +1044,7 @@ function showTab(id){
   if(id==='t-home'){updateDayWarn();renderTodayList();renderDashboard();}
 }
 function showHTab(id){['h-day','h-month','h-year'].forEach(t=>{const el=$(t);if(el)el.classList.add('hidden');});$(id).classList.remove('hidden');document.querySelectorAll('#hist-tabs .tab').forEach(b=>b.classList.toggle('active',b.dataset.htab===id));}
-function showRTab(id){['r-day','r-month','r-edit','r-int'].forEach(t=>{const el=$(t);if(el)el.classList.add('hidden');});$(id).classList.remove('hidden');document.querySelectorAll('#rep-tabs .tab').forEach(b=>b.classList.toggle('active',b.dataset.rtab===id));if(id==='r-edit'){$('r-edit-d').value=isoToday();renderREdit();}if(id==='r-int')renderIntTab();}
+function showRTab(id){['r-day','r-month','r-edit','r-int','r-balance'].forEach(t=>{const el=$(t);if(el)el.classList.add('hidden');});$(id).classList.remove('hidden');document.querySelectorAll('#rep-tabs .tab').forEach(b=>b.classList.toggle('active',b.dataset.rtab===id));if(id==='r-edit'){$('r-edit-d').value=isoToday();renderREdit();}if(id==='r-int')renderIntTab();if(id==='r-balance')renderRBalance();}
 
 /* ===== AUTH ===== */
 async function doLogin(){
@@ -1694,6 +1715,57 @@ const dailyRate=()=>((S.interestRate||0.2)/100)/365;
 function checkInterest(){const m=isoToday().slice(0,7);if(S.lastInterestMonth!==m)runInterest(true);}
 async function runInterest(auto=false){const m=isoToday().slice(0,7);if(auto&&S.lastInterestMonth===m)return;let total=0;S.accounts.forEach(acc=>{if(acc.status!=='active')return;const from=new Date(acc.lastIntDate||acc.openDate||isoToday());const days=Math.max(0,Math.floor((new Date()-from)/86400000));const int=parseFloat((acc.balance*dailyRate()*days).toFixed(2));if(int>0){acc.balance=+(acc.balance+int).toFixed(2);acc.lastIntDate=isoToday();S.txs.push({id:Date.now()+Math.random(),date:today(),time:nowTime(),accNo:acc.accNo,name:acc.displayName,type:'deposit',amount:int,balAfter:acc.balance,officer:'ระบบ',note:'ดอกเบี้ยประจำเดือน'});total+=int;}});S.lastInterestMonth=m;await save();if(total>0)toast('💹 ดอกเบี้ย '+fmt(total));}
 function renderIntTab(){const r=S.interestRate||0.2;$('int-rate-v').textContent=r+'%/ปี';$('int-last').textContent=S.lastInterestMonth||'-';let total=0;const rows=S.accounts.filter(a=>a.status==='active').map(a=>{const from=new Date(a.lastIntDate||a.openDate||isoToday());const days=Math.max(0,Math.floor((new Date()-from)/86400000));const est=parseFloat((a.balance*dailyRate()*days).toFixed(2));total+=est;return`<tr><td>${a.accNo}</td><td>${a.displayName}</td><td style="text-align:right">${fmt(a.balance)}</td><td style="text-align:right">${days}</td><td class="mpos" style="text-align:right">${fmt(est)}</td></tr>`;});$('int-est').textContent=fmt(total);$('int-table').innerHTML=rows.join('')||'<tr><td colspan="5" style="text-align:center;color:var(--text3)">ไม่มีบัญชี</td></tr>';}
+
+/* ===== สรุปยอดคงเหลือทุกบัญชี (Balance Summary) ===== */
+function accTypeLabel(t){return t==='student'?'นักเรียน':t==='room'?'เงินห้อง':t==='teacher'?'ครู/บุคลากร':'-';}
+// แปลงวันที่ของรายการ (ที่อาจเป็น d/m/พ.ศ. หรือ y-m-d) ให้เป็น ISO (y-m-d, ค.ศ.) เพื่อใช้เทียบช่วงเวลา
+function txDateISO(d){
+  d=String(d||'').trim();
+  if(d.includes('T'))d=d.split('T')[0];
+  if(d.includes('-')&&d.length===10){const p=d.split('-');const cy=parseInt(p[0])>2500?parseInt(p[0])-543:parseInt(p[0]);return cy+'-'+p[1]+'-'+p[2];}
+  if(d.includes('/')){const p=d.split('/');if(p.length===3){const cy=parseInt(p[2])>2500?parseInt(p[2])-543:parseInt(p[2]);return cy+'-'+pad(parseInt(p[1]))+'-'+pad(parseInt(p[0]));}}
+  return d;
+}
+function sortedActiveAccounts(){return S.accounts.filter(a=>a.status==='active').sort((a,b)=>String(a.accNo).localeCompare(String(b.accNo)));}
+function renderRBalance(){
+  const accs=sortedActiveAccounts();
+  const total=accs.reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+  const rows=accs.map((a,i)=>`<tr><td style="text-align:center">${i+1}</td><td>${a.accNo}</td><td>${a.displayName}</td><td>${accTypeLabel(a.type)}</td><td class="mpos" style="text-align:right">${fmt(a.balance)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:1.5rem">ไม่มีบัญชี</td></tr>';
+  $('rb-c').innerHTML=`<table><thead><tr><th>#</th><th>เลขบัญชี</th><th>ชื่อ</th><th>ประเภท</th><th style="text-align:right">ยอดคงเหลือ (ยอดสะสม)</th></tr></thead><tbody>${rows}</tbody><tfoot><tr style="font-weight:700"><td colspan="4">รวมทั้งหมด (${accs.length} บัญชี)</td><td class="mpos" style="text-align:right">${fmt(total)}</td></tr></tfoot></table>`;
+}
+function printBalanceReport(){
+  const accs=sortedActiveAccounts();
+  const total=accs.reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+  const range=$('rb-range').value;
+  let cutoffISO=null,rangeLabel='ทั้งหมด';
+  if(range!=='all'){
+    const n=parseInt(range);const dt=new Date();dt.setMonth(dt.getMonth()-n);
+    cutoffISO=dt.toISOString().slice(0,10);rangeLabel=n+' เดือนล่าสุด (ตั้งแต่ '+isoToThai(cutoffISO)+')';
+  }
+  const txs=S.txs.filter(t=>!t.cancelled&&(!cutoffISO||txDateISO(t.date)>=cutoffISO)).sort((a,b)=>{const k1=txDateISO(a.date)+' '+(a.time||'');const k2=txDateISO(b.date)+' '+(b.time||'');return k1<k2?-1:k1>k2?1:0;});
+  const balRows=accs.map((a,i)=>`<tr><td style="text-align:center">${i+1}</td><td>${a.accNo}</td><td>${a.displayName}</td><td>${accTypeLabel(a.type)}</td><td style="text-align:right">${fmt(a.balance)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center">ไม่มีบัญชี</td></tr>';
+  const txRows=txs.map((t,i)=>`<tr><td style="text-align:center">${i+1}</td><td>${t.date}</td><td>${t.time}</td><td>${t.accNo}</td><td>${t.name}</td><td>${t.type==='deposit'?'ฝาก':'ถอน'}</td><td style="text-align:right">${fmt(t.amount)}</td><td style="text-align:right">${fmt(t.balAfter)}</td></tr>`).join('')||'<tr><td colspan="8" style="text-align:center">ไม่มีรายการในช่วงนี้</td></tr>';
+  const w=window.open('','_blank');
+  if(!w){toast('กรุณาอนุญาต popup','err');return;}
+  w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>รายงานยอดคงเหลือทุกบัญชี — TKB</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <style>body{font-family:'Sarabun',sans-serif;padding:2rem;max-width:900px;margin:0 auto}h1{font-size:18px;text-align:center;margin-bottom:.25rem}p.sub{text-align:center;font-size:12px;color:#666;margin-bottom:1.5rem}h2{font-size:14px;font-weight:700;margin:1.25rem 0 .4rem;color:#1A5FA8}table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:.5rem}th{background:#1A5FA8;color:#fff;padding:6px 10px;text-align:left}td{border:1px solid #ddd;padding:5px 10px}tr:nth-child(even) td{background:#f9f9f9}tfoot td{border-top:2px solid #1A5FA8}@media print{button{display:none}}</style>
+  </head><body>
+  <h1>รายงานยอดคงเหลือทุกบัญชี — ธนาคารโรงเรียน TKB</h1>
+  <p class="sub">พิมพ์เมื่อ ${today()} ${nowTime()}</p>
+  <h2>1. ยอดคงเหลือ (ยอดสะสม) ทุกบัญชี — ${accs.length} บัญชี</h2>
+  <table><thead><tr><th>#</th><th>เลขบัญชี</th><th>ชื่อ</th><th>ประเภท</th><th style="text-align:right">ยอดคงเหลือ</th></tr></thead>
+  <tbody>${balRows}</tbody>
+  <tfoot><tr style="font-weight:700"><td colspan="4">รวมทั้งหมด</td><td style="text-align:right">${fmt(total)}</td></tr></tfoot></table>
+  <h2>2. รายการธุรกรรมประกอบ — ${rangeLabel} (${txs.length} รายการ)</h2>
+  <p style="font-size:12px;color:#666;margin-bottom:.5rem">⚠️ หากระบบมีปัญหา ใช้ยอดคงเหลือด้านบนเป็นยอดตั้งต้น แล้วทำรายการตามตารางนี้ซ้ำ เพื่อให้ข้อมูลกลับมาครบถ้วน</p>
+  <table><thead><tr><th>#</th><th>วันที่</th><th>เวลา</th><th>เลขบัญชี</th><th>ชื่อ</th><th>ประเภท</th><th style="text-align:right">จำนวน</th><th style="text-align:right">คงเหลือหลังทำ</th></tr></thead>
+  <tbody>${txRows}</tbody></table>
+  <button onclick="window.print()" style="margin-top:1.5rem;padding:8px 20px;background:#1A5FA8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-family:'Sarabun',sans-serif">🖨️ พิมพ์</button>
+  <p style="text-align:center;color:#999;margin-top:1.5rem;font-size:12px">ธนาคารโรงเรียน TKB — Designed by Pimchanok Kantawang</p>
+  </body></html>`);
+  w.document.close();
+}
 
 /* ===== DASHBOARD ===== */
 function renderDashboard(){
@@ -2436,6 +2508,8 @@ document.addEventListener('DOMContentLoaded', async function(){
   // REPORT
   $('r-day-d').addEventListener('input',renderRDay);
   $('r-month-d').addEventListener('input',renderRMonth);
+  $('rb-range').addEventListener('change',renderRBalance);
+  $('rb-print-btn').addEventListener('click',printBalanceReport);
   $('r-edit-d').addEventListener('input',renderREdit);
   $('r-print-btn').addEventListener('click',()=>window.print());
   $('r-export-btn').addEventListener('click',exportSheets);
