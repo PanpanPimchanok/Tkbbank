@@ -2,7 +2,7 @@
   "name": "ธนาคารโรงเรียน TKB",
   "short_name": "TKB Bank",
   "description": "ระบบธนาคารโรงเรียน TKB",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#F5F4F0",
   "theme_color": "#1A5FA8",
