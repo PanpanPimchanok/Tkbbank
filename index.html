@@ -196,8 +196,18 @@ input,select{font-size:16px!important}/* ป้องกัน iOS zoom ตอ�
 
     <!-- Statement -->
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-        <p class="sec" style="margin:0">📋 Statement — ทุกรายการตั้งแต่เปิดบัญชี</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
+        <p class="sec" style="margin:0" id="mv-stmt-title">📋 Statement — ทุกรายการตั้งแต่เปิดบัญชี</p>
+        <div class="no-print"><span class="lbl">ช่วงเวลา</span>
+          <select id="mv-range" style="width:160px">
+            <option value="1">1 เดือนล่าสุด</option>
+            <option value="2">2 เดือนล่าสุด</option>
+            <option value="3">3 เดือนล่าสุด</option>
+            <option value="6">6 เดือนล่าสุด</option>
+            <option value="12">12 เดือนล่าสุด</option>
+            <option value="all" selected>ทั้งหมด</option>
+          </select>
+        </div>
       </div>
       <table>
         <thead>
@@ -1168,8 +1178,24 @@ async function doMemberLogin(){
   $('mv-sub2').textContent=sub2;
   $('mv-bal').textContent=fmt(acc.balance);
   $('mv-badge').innerHTML=accBadge(acc.type);
-  const txs=S.txs.filter(t=>t.accNo===acc.accNo&&!t.cancelled);
-  $('mv-tx-cnt').textContent=txs.length+' รายการ';
+  curMemberAcc=acc;
+  $('mv-tx-cnt').textContent=S.txs.filter(t=>t.accNo===acc.accNo&&!t.cancelled).length+' รายการ';
+  renderMemberStatement();
+  showPage('p-mview');
+}
+let curMemberAcc=null;
+function renderMemberStatement(){
+  const acc=curMemberAcc;if(!acc)return;
+  const range=$('mv-range').value;
+  let allTxs=S.txs.filter(t=>t.accNo===acc.accNo&&!t.cancelled);
+  let txs=allTxs,rangeLabel='ทุกรายการตั้งแต่เปิดบัญชี';
+  if(range!=='all'){
+    const n=parseInt(range);const dt=new Date();dt.setMonth(dt.getMonth()-n);
+    const cutoffISO=dt.toISOString().slice(0,10);
+    txs=allTxs.filter(t=>txDateISO(t.date)>=cutoffISO);
+    rangeLabel=n+' เดือนล่าสุด (ตั้งแต่ '+isoToThai(cutoffISO)+')';
+  }
+  $('mv-stmt-title').textContent='📋 Statement — '+rangeLabel;
   // render statement rows
   $('mv-txs').innerHTML=txs.length?txs.map((t,i)=>{
     const isDep=t.type==='deposit';
@@ -1183,17 +1209,16 @@ async function doMemberLogin(){
       <td class="mneg" style="text-align:right">${!isDep?fmt(t.amount):'-'}</td>
       <td style="text-align:right;font-weight:600">${fmt(t.balAfter)}</td>
     </tr>`;
-  }).join(''):'<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:1.5rem">ยังไม่มีรายการ</td></tr>';
+  }).join(''):'<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:1.5rem">ไม่มีรายการในช่วงนี้</td></tr>';
   // footer summary
   const totalDep=txs.filter(t=>t.type==='deposit').reduce((a,t)=>a+(parseFloat(t.amount)||0),0);
   const totalWit=txs.filter(t=>t.type==='withdraw').reduce((a,t)=>a+(parseFloat(t.amount)||0),0);
   $('mv-tfoot').innerHTML=`<tr style="background:var(--bg3);font-weight:700">
-    <td colspan="4" style="text-align:right;padding:8px 10px;font-size:13px">รวมทั้งหมด</td>
+    <td colspan="4" style="text-align:right;padding:8px 10px;font-size:13px">รวม${range==='all'?'ทั้งหมด':'ในช่วงนี้'}</td>
     <td class="mpos" style="text-align:right;padding:8px 10px">${fmt(totalDep)}</td>
     <td class="mneg" style="text-align:right;padding:8px 10px">${fmt(totalWit)}</td>
     <td style="text-align:right;padding:8px 10px" class="mpos">${fmt(acc.balance)}</td>
   </tr>`;
-  showPage('p-mview');
 }
 function memberMatch(a,c){const c6=x=>String(x||'').replace(/\D/g,'').slice(-6);if(a.type==='room')return c6(a.cid1)===c||c6(a.cid2)===c;return c6(a.cid||'')===c;}
 
@@ -2329,6 +2354,7 @@ document.addEventListener('DOMContentLoaded', async function(){
   $('mc-btn').addEventListener('click',doMemberLogin);
   $('mc').addEventListener('keydown',e=>{if(e.key==='Enter')$('mc-btn').click();});
   $('mv-back').addEventListener('click',()=>showPage('p-home'));
+  $('mv-range').addEventListener('change',renderMemberStatement);
   $('mv-print-btn').addEventListener('click',()=>{
     // แสดง footer ก่อนพิมพ์
     $('mv-print-date').textContent=today()+' เวลา '+nowTime();
