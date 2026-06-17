@@ -945,7 +945,15 @@ let S0=null; // snapshot ของ S ตอนโหลด/บันทึกล
 function deepClone(o){return JSON.parse(JSON.stringify(o));}
 function setBaseline(){S0=deepClone(S);}
 // บวก delta ของทั้ง local และ remote เทียบกับ base (รองรับเงินที่เปลี่ยนพร้อมกัน 2 ฝั่ง)
-function mergeNum(base,local,remote){base=base||0;local=local||0;remote=remote||0;return +((local+remote-base).toFixed(2));}
+function mergeNum(base,local,remote){
+  // สำคัญมาก: ค่าจาก Google Sheets เก็บเป็น text/string เสมอ
+  // ถ้าไม่ parseFloat ก่อน การบวกด้วย + จะกลายเป็น string concatenation (เช่น "40"+"40"="4040")
+  // ทำให้ยอดเงินพองตัวมหาศาลทุกครั้งที่ sync — ต้องแปลงเป็นตัวเลขก่อนเสมอ
+  base=parseFloat(base)||0;
+  local=parseFloat(local)||0;
+  remote=parseFloat(remote)||0;
+  return +((local+remote-base).toFixed(2));
+}
 // เลือกค่าฝั่งที่ "เปลี่ยนจาก base" ถ้าทั้งคู่เปลี่ยน ให้ local ชนะ
 function mergeField(base,local,remote){
   const bj=JSON.stringify(base),lj=JSON.stringify(local),rj=JSON.stringify(remote);
@@ -968,9 +976,12 @@ function mergeAccounts(base,local,remote){
   const out=[];
   allNos.forEach(no=>{
     const b=baseMap.get(no),l=localMap.get(no),r=remoteMap.get(no);
+    console.log('[DEBUG mergeAccounts]',no,'b=',b?b.balance:'(ไม่มี)','l=',l?l.balance:'(ไม่มี)','r=',r?r.balance:'(ไม่มี)');
     if(l&&r){
       const merged=Object.assign({},b||l,l,r);
-      merged.balance=mergeNum(b?b.balance:l.balance,l.balance,r.balance);
+      const baseBal=b?b.balance:l.balance;
+      merged.balance=mergeNum(baseBal,l.balance,r.balance);
+      console.log('[DEBUG mergeAccounts]',no,'→ mergeNum(base=',baseBal,', local=',l.balance,', remote=',r.balance,') = ',merged.balance);
       // ฟิลด์อื่นๆ ที่อาจเปลี่ยนแยกกัน เช่น status, lastIntDate
       ['status','lastIntDate','appSeq'].forEach(k=>{merged[k]=mergeField(b?b[k]:undefined,l[k],r[k]);});
       out.push(merged);
@@ -1020,7 +1031,10 @@ async function save(){
   setSyncBadge('syncing');
   const local=deepClone(S);
   const base=S0||local;
+  console.log('[DEBUG save] base.accounts=',JSON.parse(JSON.stringify(base.accounts||[])));
+  console.log('[DEBUG save] local.accounts=',JSON.parse(JSON.stringify(local.accounts||[])));
   const remote=await gasGet({action:'load'});
+  console.log('[DEBUG save] remote (จาก Sheets ดิบๆ)=',remote);
   if(!remote||remote.error){
     // offline — บันทึกของตัวเองไปก่อน (ไม่อัป baseline เผื่อรอบหน้า merge ได้ถูกต้อง)
     const r=await gasPost({action:'save',data:S});
@@ -1028,6 +1042,7 @@ async function save(){
     setSyncBadge('err');return false;
   }
   const R=Object.assign(dfltS(),remote);
+  console.log('[DEBUG save] R.accounts (remote หลัง assign dfltS)=',JSON.parse(JSON.stringify(R.accounts||[])));
   const merged=deepClone(local);
   merged.safe=mergeNum(base.safe,local.safe,R.safe);
   merged.drawer=mergeNum(base.drawer,local.drawer,R.drawer);
@@ -1039,6 +1054,7 @@ async function save(){
   merged.offPw=mergeField(base.offPw,local.offPw,R.offPw);
   merged.lock=mergeField(base.lock,local.lock,R.lock);
   merged.accounts=mergeAccounts(base.accounts,local.accounts,R.accounts);
+  console.log('[DEBUG save] merged.accounts (ผลลัพธ์ mergeAccounts)=',JSON.parse(JSON.stringify(merged.accounts)));
   merged.txs=mergeArrByKey(local.txs,R.txs,t=>String(t.id));
   merged.safeLog=mergeArrByKey(local.safeLog,R.safeLog,safeLogKey);
   merged.drawerLog=mergeArrByKey(local.drawerLog,R.drawerLog,drawerLogKey);
@@ -1285,11 +1301,16 @@ async function doDeposit(){
   if(!amt||amt<=0){toast('กรุณากรอกจำนวนเงิน','err');return;}
   const acc=S.accounts.find(a=>a.accNo===no&&a.status==='active');
   if(!acc){toast('ไม่พบบัญชีนี้','err');return;}
+  console.log('[DEBUG doDeposit] ก่อนฝาก: acc.balance=',acc.balance,'amt=',amt);
   acc.balance=+(acc.balance+amt).toFixed(2);
+  console.log('[DEBUG doDeposit] หลังฝาก (ก่อน save): acc.balance=',acc.balance);
   S.drawer=+(S.drawer+amt).toFixed(2);
   S.txs.push({id:Date.now(),date:today(),time:nowTime(),accNo:acc.accNo,name:acc.displayName,type:'deposit',amount:amt,balAfter:acc.balance,officer:todaySess()?.officers||'เจ้าหน้าที่',note});
-  await save();toast('✅ ฝากเงิน '+fmt(amt)+' สำเร็จ');
+  await save();
+  console.log('[DEBUG doDeposit] หลัง save: S.accounts=',JSON.parse(JSON.stringify(S.accounts)));
+  toast('✅ ฝากเงิน '+fmt(amt)+' สำเร็จ');
   const depAcc=S.accounts.find(a=>a.accNo===no);
+  console.log('[DEBUG doDeposit] depAcc ที่จะโชว์ใบเสร็จ=',depAcc?JSON.parse(JSON.stringify(depAcc)):null);
   $('dep-no').value='';$('dep-amt').value='';$('dep-note').value='';$('dep-info').innerHTML='';
   hideAllPanels();renderTodayList();renderSafeVal();renderDashboard();
   if(depAcc) showReceipt('deposit',depAcc,amt,note,depAcc.balance);
