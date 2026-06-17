@@ -992,10 +992,27 @@ const drawerLogKey=l=>[l.date,l.time,l.type,l.amount,l.note,l.drawerAfter].join(
 async function forceSave(){
   localStorage.setItem('tkb_s',JSON.stringify(S));
   rebuildSeq();
-  if(!GAS)return;
+  if(!GAS)return true;
   setSyncBadge('syncing');
-  const r=await gasPost({action:'save',data:S});
-  if(r&&r.ok){setSyncBadge('ok');setBaseline();}else setSyncBadge('err');
+  // ลองส่งซ้ำสูงสุด 3 ครั้ง เพราะการรีเซ็ตข้อมูลห้าม "ค้าง" อยู่ครึ่งๆกลางๆ
+  for(let attempt=1;attempt<=3;attempt++){
+    const r=await gasPost({action:'save',data:S});
+    if(r&&r.ok){setSyncBadge('ok');setBaseline();return true;}
+    if(attempt<3) await new Promise(res=>setTimeout(res,1000*attempt));
+  }
+  setSyncBadge('err');
+  return false;
+}
+// ใช้เฉพาะตอนรีเซ็ตข้อมูล: save แล้วโหลดกลับมาตรวจว่า Sheets ว่างจริงตามที่ตั้งใจ
+async function forceSaveAndVerify(){
+  const ok=await forceSave();
+  if(!ok||!GAS)return ok;
+  const d=await gasGet({action:'load'});
+  if(!d||d.error)return false;
+  const remoteEmpty=(!d.accounts||d.accounts.length===0)&&(!d.txs||d.txs.length===0);
+  if(!remoteEmpty)return false; // Sheets ยังมีข้อมูลเก่าหลงเหลือ — ถือว่ายังไม่สำเร็จ
+  S=Object.assign(dfltS(),d);rebuildSeq();localStorage.setItem('tkb_s',JSON.stringify(S));setBaseline();
+  return true;
 }
 async function save(){
   localStorage.setItem('tkb_s',JSON.stringify(S));
@@ -2623,8 +2640,12 @@ document.addEventListener('DOMContentLoaded', async function(){
     S.safe=0;S.drawer=0;S.lock=null;S.lastInterestMonth=null;
     S.scoreSessions=[];S.scoreData={};
     accSeq={}; // รีเซ็ตเลขบัญชีเริ่มจาก 2569-00001
-    await forceSave(); // บังคับเขียนทับ ไม่ merge กับของเดิมบน Sheets
-    toast('✅ ล้างข้อมูลทั้งหมดเรียบร้อย — เลขบัญชีเริ่มใหม่จาก 00001');
+    const ok=await forceSaveAndVerify(); // บังคับเขียนทับ + โหลดกลับมาตรวจว่า Sheets ว่างจริง
+    if(ok){
+      toast('✅ ล้างข้อมูลทั้งหมดเรียบร้อย (ตรวจสอบกับ Sheets แล้ว) — เลขบัญชีเริ่มใหม่จาก 00001');
+    }else{
+      alert('⚠️ ล้างข้อมูลในเครื่องนี้แล้ว แต่ยืนยันกับ Google Sheets ไม่สำเร็จ (เน็ตมีปัญหา หรือ Sheets ยังมีข้อมูลเก่าหลงเหลือ)\n\nห้ามเปิดบัญชีใหม่ตอนนี้ — ให้ตรวจสอบอินเทอร์เน็ตแล้วลองกด "🗑️ ล้างข้อมูลทั้งหมด" อีกครั้งจนกว่าจะขึ้น ✅ สำเร็จ\nไม่เช่นนั้นข้อมูลเก่าจะถูกดึงกลับมาปนกับบัญชีใหม่ที่ใช้เลขเดิม');
+    }
     renderSet();renderDashboard();
   });
   $('int-save-btn').addEventListener('click',async()=>{
