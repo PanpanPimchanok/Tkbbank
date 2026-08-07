@@ -982,6 +982,12 @@ function mergeAccounts(base,local,remote){
       merged.balance=mergeNum(baseBal,l.balance,r.balance);
       // ฟิลด์อื่นๆ ที่อาจเปลี่ยนแยกกัน เช่น status, lastIntDate
       ['status','lastIntDate','appSeq'].forEach(k=>{merged[k]=mergeField(b?b[k]:undefined,l[k],r[k]);});
+
+      // ให้เลขบัตรประชาชนที่แก้ใน Google Sheets เป็นค่าหลัก
+      merged.cid=String(r.cid||l.cid||'').replace(/\D/g,'');
+      merged.cid1=String(r.cid1||l.cid1||'').replace(/\D/g,'');
+      merged.cid2=String(r.cid2||l.cid2||'').replace(/\D/g,'');
+
       out.push(merged);
     }else if(l){out.push(l);}else if(r){out.push(r);}
   });
@@ -1179,10 +1185,22 @@ function enterStaff(isMgr){
   showPage('p-staff');renderSafeVal();renderTodayList();renderDashboard();checkInterest();
 }
 async function doMemberLogin(){
-  const code=$('mc').value.trim();
+  const code=String($('mc').value||'').replace(/\D/g,'').slice(-6);
+  $('mc').value=code;
   if(code.length!==6){toast('กรุณากรอก 6 หลัก','err');return;}
-  const acc=S.accounts.find(a=>a.status==='active'&&memberMatch(a,code));
-  if(!acc){toast('ไม่พบบัญชีที่ตรงกัน','err');return;}
+
+  // โหลดข้อมูลล่าสุดจาก Google Sheets ก่อนค้นหา CID ทุกครั้ง
+  if(GAS){
+    setSyncBadge('syncing');
+    const fresh=await loadFresh();
+    if(!fresh){
+      toast('โหลดข้อมูลล่าสุดจาก Google Sheets ไม่สำเร็จ','err');
+      return;
+    }
+  }
+
+  const acc=S.accounts.find(a=>String(a.status||'active').trim().toLowerCase()==='active'&&memberMatch(a,code));
+  if(!acc){toast('ไม่พบบัญชีที่ตรงกัน กรุณาตรวจ CID และสถานะบัญชี','err');return;}
   $('mv-av').textContent=initials(acc.displayName);
   $('mv-av').style.background={student:'var(--green-lt)',room:'var(--teal-lt)',teacher:'var(--blue-lt)'}[acc.type]||'var(--bg3)';
   $('mv-name').textContent=acc.displayName;
@@ -2408,9 +2426,9 @@ async function backupToDriveClick(){
   else toast('❌ Backup ไม่สำเร็จ','err');
 }
 async function reloadData(){
-  toast('⏳ กำลัง Sync...','inf');
-  const ok=await save(); // save() ทำ merge กับ Sheets ล่าสุดให้อัตโนมัติ
-  toast(ok?'✅ Sync สำเร็จ':'❌ Sync ไม่สำเร็จ',ok?'ok':'err');
+  toast('⏳ กำลังโหลดข้อมูลจาก Google Sheets...','inf');
+  const ok=await loadFresh();
+  toast(ok?'✅ โหลดข้อมูลล่าสุดจาก Google Sheets สำเร็จ':'❌ โหลดข้อมูลไม่สำเร็จ',ok?'ok':'err');
 }
 
 /* ===== SEARCH MODAL ===== */
