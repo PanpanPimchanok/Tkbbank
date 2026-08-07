@@ -1185,10 +1185,22 @@ function enterStaff(isMgr){
   showPage('p-staff');renderSafeVal();renderTodayList();renderDashboard();checkInterest();
 }
 async function doMemberLogin(){
-  const code=$('mc').value.trim();
+  const code=String($('mc').value||'').replace(/\D/g,'').slice(-6);
+  $('mc').value=code;
   if(code.length!==6){toast('กรุณากรอก 6 หลัก','err');return;}
-  const acc=S.accounts.find(a=>a.status==='active'&&memberMatch(a,code));
-  if(!acc){toast('ไม่พบบัญชีที่ตรงกัน','err');return;}
+
+  // โหลดข้อมูลล่าสุดจาก Google Sheets ก่อนค้นหา CID ทุกครั้ง
+  if(GAS){
+    setSyncBadge('syncing');
+    const fresh=await loadFresh();
+    if(!fresh){
+      toast('โหลดข้อมูลล่าสุดจาก Google Sheets ไม่สำเร็จ','err');
+      return;
+    }
+  }
+
+  const acc=S.accounts.find(a=>String(a.status||'active').trim().toLowerCase()==='active'&&memberMatch(a,code));
+  if(!acc){toast('ไม่พบบัญชีที่ตรงกัน กรุณาตรวจ CID และสถานะบัญชี','err');return;}
   $('mv-av').textContent=initials(acc.displayName);
   $('mv-av').style.background={student:'var(--green-lt)',room:'var(--teal-lt)',teacher:'var(--blue-lt)'}[acc.type]||'var(--bg3)';
   $('mv-name').textContent=acc.displayName;
