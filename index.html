@@ -776,6 +776,22 @@ input,select{font-size:16px!important}/* ป้องกัน iOS zoom ตอ�
   </div>
 </div>
 
+<!-- EDIT ACCOUNT MODAL -->
+<div class="modal-bg" id="acc-edit-modal">
+  <div class="modal" style="max-width:620px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h3 style="font-size:16px;font-weight:700">✏️ แก้ไขข้อมูลบัญชี</h3>
+      <button class="btn btn-sm" id="acc-edit-close">✕</button>
+    </div>
+    <div id="acc-edit-head" class="info" style="font-size:13px;margin-bottom:1rem"></div>
+    <div id="acc-edit-fields"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn btn-s" id="acc-edit-save">💾 บันทึกข้อมูลบัญชี</button>
+      <button class="btn" id="acc-edit-cancel">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT TX MODAL -->
 <div class="modal-bg" id="edit-modal">
   <div class="modal">
@@ -824,7 +840,7 @@ const MIN_OPEN=20,MIN_BAL=10;
 let S={mgrId:'Teacherbank',mgrPw:'tkbbank1234',offId:'Tkbbank',offPw:'tkbbank123456',safe:0,drawer:0,interestRate:0.2,lastInterestMonth:null,lock:null,accounts:[],txs:[],safeLog:[],drawerLog:[],sessions:[]};
 let SES={isMgr:false,printed:false};
 let accSeq={};
-let editTxId=null,cancelTxId=null,searchCB=null;
+let editTxId=null,cancelTxId=null,searchCB=null,editAccNo=null;
 let closeStep=1,bookOk=false;
 let curOpenType='student';
 
@@ -983,10 +999,10 @@ function mergeAccounts(base,local,remote){
       // ฟิลด์อื่นๆ ที่อาจเปลี่ยนแยกกัน เช่น status, lastIntDate
       ['status','lastIntDate','appSeq'].forEach(k=>{merged[k]=mergeField(b?b[k]:undefined,l[k],r[k]);});
 
-      // ให้เลขบัตรประชาชนที่แก้ใน Google Sheets เป็นค่าหลัก
-      merged.cid=String(r.cid||l.cid||'').replace(/\D/g,'');
-      merged.cid1=String(r.cid1||l.cid1||'').replace(/\D/g,'');
-      merged.cid2=String(r.cid2||l.cid2||'').replace(/\D/g,'');
+      // ถ้าแก้จากหน้าเว็บให้ค่าหน้าเว็บชนะ แต่ถ้าแก้เฉพาะใน Sheets ให้ค่า Sheets ชนะ
+      merged.cid=String(mergeField(b?b.cid:undefined,l.cid,r.cid)||'').replace(/\D/g,'');
+      merged.cid1=String(mergeField(b?b.cid1:undefined,l.cid1,r.cid1)||'').replace(/\D/g,'');
+      merged.cid2=String(mergeField(b?b.cid2:undefined,l.cid2,r.cid2)||'').replace(/\D/g,'');
 
       out.push(merged);
     }else if(l){out.push(l);}else if(r){out.push(r);}
@@ -1500,7 +1516,7 @@ function renderTodayList(){
 function renderAccTable(){
   const q=($('acc-q')?.value||'').toLowerCase();const ft=$('acc-f')?.value||'';
   let list=S.accounts;if(ft)list=list.filter(a=>a.type===ft);
-  if(q)list=list.filter(a=>(a.displayName||'').toLowerCase().includes(q)||a.accNo.includes(q)||(a.stid||'').includes(q));
+  if(q)list=list.filter(a=>(a.displayName||'').toLowerCase().includes(q)||a.accNo.includes(q)||(a.stid||'').includes(q)||String(a.cid||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))||String(a.cid1||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))||String(a.cid2||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')));
   const inactive=getInactiveAccounts().map(a=>a.accNo);
   $('acc-table').innerHTML=list.length?list.map(a=>{const addr=a.addr||{};
     const isInactive=inactive.includes(a.accNo);
@@ -1508,8 +1524,60 @@ function renderAccTable(){
     <td style="font-size:12px">${a.type==='student'?`${gradeLabel(calcCurrentGrade(a.year,a.grade))} <span style="color:var(--text3)">(ปีการศึกษา ${currentSchoolYear()})</span>`:a.type==='teacher'?`ปี ${a.year||'-'}`:'-'}</td>
     <td style="text-align:right;font-weight:700">${fmt(a.balance)}</td>
     <td><span class="badge ${a.status==='active'?'bg':'bgr'}">${a.status==='active'?'ใช้งาน':'ปิดแล้ว'}</span>${isInactive?'<span class="badge ba" style="margin-left:3px">ไม่เคลื่อนไหว</span>':''}</td>
-    <td>${SES.isMgr?`<button class="btn btn-xs show-addr-btn" data-accno="${a.accNo}" style="font-size:11px">ℹ️ ข้อมูล</button>`:'<span style="color:var(--text3);font-size:11px">—</span>'}</td></tr>`;
+    <td>${SES.isMgr?`<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-xs show-addr-btn" data-accno="${a.accNo}" style="font-size:11px">ℹ️ ข้อมูล</button><button class="btn btn-xs btn-p edit-acc-btn" data-accno="${a.accNo}" style="font-size:11px">✏️ แก้ไข</button></div>`:'<span style="color:var(--text3);font-size:11px">—</span>'}</td></tr>`;
   }).join(''):'<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:1.5rem">ไม่พบข้อมูล</td></tr>';
+}
+
+/* ===== EDIT ACCOUNT ===== */
+function openEditAccount(accNo){
+  if(!SES.isMgr){toast('เฉพาะผู้จัดการเท่านั้น','err');return;}
+  const a=S.accounts.find(x=>x.accNo===accNo);if(!a)return;
+  editAccNo=accNo;
+  $('acc-edit-head').innerHTML=`เลขบัญชี <strong>${a.accNo}</strong> · ${a.displayName||'-'}<br><span style="font-size:11px">เลขบัญชีและยอดเงินจะไม่ถูกแก้ไขในหน้านี้</span>`;
+  const commonAddr=`<hr class="sep"><p class="sec">ที่อยู่</p><div class="g2">
+    <div><span class="lbl">บ้านเลขที่</span><input id="ae-hno" value="${a.addrHno||''}"></div>
+    <div><span class="lbl">หมู่ที่</span><input id="ae-moo" value="${a.addrMoo||''}"></div>
+    <div><span class="lbl">ตำบล/แขวง</span><input id="ae-sub" value="${a.addrSub||''}"></div>
+    <div><span class="lbl">อำเภอ/เขต</span><input id="ae-dist" value="${a.addrDist||''}"></div>
+    <div><span class="lbl">จังหวัด</span><input id="ae-prov" value="${a.addrProv||''}"></div>
+    <div><span class="lbl">รหัสไปรษณีย์</span><input id="ae-zip" inputmode="numeric" value="${a.addrZip||''}"></div>
+  </div>`;
+  let html='';
+  if(a.type==='room'){
+    html=`<p class="sec">บัญชีเงินห้อง</p><div style="margin-bottom:10px"><span class="lbl">ชื่อบัญชี/ชื่อห้อง</span><input id="ae-name" value="${a.displayName||''}"></div>
+    <div class="g2"><div><span class="lbl">ตัวแทนคนที่ 1</span><input id="ae-r1n" value="${a.rep1n||''}"></div><div><span class="lbl">CID คนที่ 1 (13 หลัก)</span><input id="ae-cid1" maxlength="13" inputmode="numeric" value="${a.cid1||''}"></div>
+    <div><span class="lbl">ตัวแทนคนที่ 2</span><input id="ae-r2n" value="${a.rep2n||''}"></div><div><span class="lbl">CID คนที่ 2 (13 หลัก)</span><input id="ae-cid2" maxlength="13" inputmode="numeric" value="${a.cid2||''}"></div></div>`;
+  }else{
+    html=`<p class="sec">ข้อมูลเจ้าของบัญชี</p><div class="g2">
+      <div><span class="lbl">ชื่อ</span><input id="ae-fn" value="${a.fname||''}"></div><div><span class="lbl">นามสกุล</span><input id="ae-ln" value="${a.lname||''}"></div>
+      <div><span class="lbl">เลขบัตรประชาชน CID (13 หลัก)</span><input id="ae-cid" maxlength="13" inputmode="numeric" value="${a.cid||''}"></div>
+      <div><span class="lbl">วันเกิด</span><input id="ae-dob" type="date" value="${a.dob||''}"></div>`;
+    if(a.type==='student') html+=`<div><span class="lbl">รหัสนักเรียน</span><input id="ae-stid" value="${a.stid||''}"></div><div><span class="lbl">ชั้นตอนเปิดบัญชี</span><select id="ae-grade">${[1,2,3,4,5,6].map(n=>`<option value="m${n}" ${a.grade==='m'+n?'selected':''}>ม.${n}</option>`).join('')}</select></div>`;
+    html+=`<div><span class="lbl">ปีการศึกษาที่เปิดบัญชี</span><input id="ae-year" inputmode="numeric" value="${a.year||''}"></div></div>`;
+  }
+  $('acc-edit-fields').innerHTML=html+commonAddr;
+  $('acc-edit-modal').classList.add('open');
+}
+async function saveEditedAccount(){
+  const a=S.accounts.find(x=>x.accNo===editAccNo);if(!a)return;
+  if(a.type==='room'){
+    const name=($('ae-name')?.value||'').trim(),r1n=($('ae-r1n')?.value||'').trim(),r2n=($('ae-r2n')?.value||'').trim();
+    const c1=($('ae-cid1')?.value||'').replace(/\D/g,''),c2=($('ae-cid2')?.value||'').replace(/\D/g,'');
+    if(!name){toast('กรุณากรอกชื่อบัญชี','err');return;}
+    if(c1&&c1.length!==13){toast('CID คนที่ 1 ต้องมี 13 หลัก','err');return;}
+    if(c2&&c2.length!==13){toast('CID คนที่ 2 ต้องมี 13 หลัก','err');return;}
+    Object.assign(a,{displayName:name,rep1n:r1n,cid1:c1,rep2n:r2n,cid2:c2});
+  }else{
+    const fn=($('ae-fn')?.value||'').trim(),ln=($('ae-ln')?.value||'').trim(),cid=($('ae-cid')?.value||'').replace(/\D/g,'');
+    if(!fn||!ln){toast('กรุณากรอกชื่อและนามสกุล','err');return;}
+    if(cid.length!==13){toast('CID ต้องมี 13 หลัก','err');return;}
+    Object.assign(a,{fname:fn,lname:ln,displayName:fn+' '+ln,cid,dob:($('ae-dob')?.value||'').trim(),year:($('ae-year')?.value||'').trim()});
+    if(a.type==='student') Object.assign(a,{stid:($('ae-stid')?.value||'').trim(),grade:$('ae-grade')?.value||a.grade});
+  }
+  Object.assign(a,{addrHno:($('ae-hno')?.value||'').trim(),addrMoo:($('ae-moo')?.value||'').trim(),addrSub:($('ae-sub')?.value||'').trim(),addrDist:($('ae-dist')?.value||'').trim(),addrProv:($('ae-prov')?.value||'').trim(),addrZip:($('ae-zip')?.value||'').trim(),editedAt:new Date().toISOString(),editedBy:'ผู้จัดการ'});
+  const ok=await save();
+  if(!ok){toast('บันทึกไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ต','err');return;}
+  $('acc-edit-modal').classList.remove('open');renderAccTable();toast('✅ แก้ไขข้อมูลบัญชีเรียบร้อย');
 }
 
 /* ===== SAFE ===== */
@@ -2536,6 +2604,7 @@ document.addEventListener('DOMContentLoaded', async function(){
   // ADDR MODAL
   $('addr-close').addEventListener('click',()=>$('addr-modal').classList.remove('open'));
   document.addEventListener('click',function(e){
+    const editAccBtn=e.target.closest('.edit-acc-btn');if(editAccBtn){openEditAccount(editAccBtn.dataset.accno);return;}
     const btn=e.target.closest('.show-addr-btn');
     if(btn){
       const acc=S.accounts.find(a=>a.accNo===btn.dataset.accno);if(!acc)return;
@@ -2569,6 +2638,11 @@ document.addEventListener('DOMContentLoaded', async function(){
     const editBtn=e.target.closest('.edit-tx-btn');if(editBtn)openEditTx(editBtn.dataset.id);
     const cancelBtn=e.target.closest('.cancel-tx-btn');if(cancelBtn)openCancelTx(cancelBtn.dataset.id);
   });
+
+  // EDIT ACCOUNT MODAL
+  $('acc-edit-close').addEventListener('click',()=>$('acc-edit-modal').classList.remove('open'));
+  $('acc-edit-cancel').addEventListener('click',()=>$('acc-edit-modal').classList.remove('open'));
+  $('acc-edit-save').addEventListener('click',saveEditedAccount);
 
   // EDIT/CANCEL TX MODALS
   $('edit-close').addEventListener('click',()=>$('edit-modal').classList.remove('open'));
